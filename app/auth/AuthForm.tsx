@@ -48,7 +48,7 @@ function AuthForm() {
       if (result.success) {
         router.push("/dashboard")
       } else {
-        setError(result.error)
+        setError(result.error || "Échec de l'authentification")
       }
     } catch (err: any) {
       console.error(err)

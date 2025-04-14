@@ -16,126 +16,193 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "./pagination"
-import { Search, MoreHorizontal, Eye, Lock, Unlock } from "lucide-react"
+} from "@/components/ui/pagination"
+import {
+  Search,
+  MoreHorizontal,
+  Eye,
+  Lock,
+  Unlock,
+  Loader2,
+  Mail,
+  Phone,
+  Calendar,
+  MapPin,
+  CreditCard,
+} from "lucide-react"
 import Image from "next/image"
+import { client } from "@/lib/appoloClient"
+import { GET_DRIVERS } from "@/lib/graphql/queries"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-type Client = {
-  id: number
+// Type pour les données du passager provenant de l'API
+type PassengerNode = {
+  id: string
   firstName: string
   lastName: string
-  residence: string
-  reservations: number
-  photo: string
-  isBlocked: boolean
+  phoneNumber: string
   email: string
-  phone: string
-  registrationDate: string
+  isActive: boolean
+  isOnline: boolean
+  createdAt: string
+  vehicles: {
+    edges: {
+      node: {
+        vehicleBrand: string
+        vehicleRegistration: string
+        vehicleModel: string
+        vehicleColor: string
+        documents: {
+          edges: {
+            node: {
+              rectoPath: string
+              versoPath: string
+            }
+          }[]
+        }
+      }
+    }[]
+  }
+  status: {
+    id: string
+    userType: string
+    driverVerified: string
+    passengerVerified: string
+  }
+  documents: {
+    edges: {
+      node: {
+        rectoPath: string
+        versoPath: string
+      }
+    }[]
+  }
 }
 
-const clients: Client[] = [
-  {
-    id: 1,
-    firstName: "Alice",
-    lastName: "Dubois",
-    residence: "Paris",
-    reservations: 15,
-    photo: "/placeholder.svg?height=40&width=40",
-    isBlocked: false,
-    email: "alice.dubois@example.com",
-    phone: "06 12 34 56 78",
-    registrationDate: "15/01/2023",
-  },
-  {
-    id: 2,
-    firstName: "Bernard",
-    lastName: "Martin",
-    residence: "Lyon",
-    reservations: 8,
-    photo: "/placeholder.svg?height=40&width=40",
-    isBlocked: true,
-    email: "bernard.martin@example.com",
-    phone: "06 23 45 67 89",
-    registrationDate: "22/03/2023",
-  },
-  {
-    id: 3,
-    firstName: "Claire",
-    lastName: "Lefebvre",
-    residence: "Marseille",
-    reservations: 22,
-    photo: "/placeholder.svg?height=40&width=40",
-    isBlocked: false,
-    email: "claire.lefebvre@example.com",
-    phone: "06 34 56 78 90",
-    registrationDate: "10/02/2023",
-  },
-  {
-    id: 4,
-    firstName: "David",
-    lastName: "Moreau",
-    residence: "Bordeaux",
-    reservations: 5,
-    photo: "/placeholder.svg?height=40&width=40",
-    isBlocked: false,
-    email: "david.moreau@example.com",
-    phone: "06 45 67 89 01",
-    registrationDate: "05/04/2023",
-  },
-  {
-    id: 5,
-    firstName: "Émilie",
-    lastName: "Rousseau",
-    residence: "Lille",
-    reservations: 12,
-    photo: "/placeholder.svg?height=40&width=40",
-    isBlocked: false,
-    email: "emilie.rousseau@example.com",
-    phone: "06 56 78 90 12",
-    registrationDate: "18/05/2023",
-  },
-]
+// Type pour notre modèle de passager interne
+type Passenger = {
+  id: string
+  firstName: string
+  lastName: string
+  fullName: string
+  email: string
+  phone: string
+  photo: string
+  isActive: boolean
+  isBlocked: boolean
+  registrationDate: string
+  reservations: number
+  passengerVerified: string
+  driverVerified: string
+  idCardFront: string
+  idCardBack: string
+}
 
-export default function ClientDashboard() {
-  const [clientList, setClientList] = useState<Client[]>(clients)
-  const [filteredClients, setFilteredClients] = useState<Client[]>(clients)
+export default function PassengerDashboard() {
+  const [passengerList, setPassengerList] = useState<Passenger[]>([])
+  const [filteredPassengers, setFilteredPassengers] = useState<Passenger[]>([])
   const [searchQuery, setSearchQuery] = useState<string>("")
-  const [residenceFilter, setResidenceFilter] = useState<string>("all")
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [selectedPassenger, setSelectedPassenger] = useState<Passenger | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(5)
   const [totalPages, setTotalPages] = useState(1)
-  const [paginatedClients, setPaginatedClients] = useState<Client[]>([])
+  const [paginatedPassengers, setPaginatedPassengers] = useState<Passenger[]>([])
+
+  // Charger les passagers depuis l'API GraphQL
+  useEffect(() => {
+    const fetchPassengers = async () => {
+      try {
+        setLoading(true)
+        const { data } = await client.query({
+          query: GET_DRIVERS,
+          variables: { userType: "PASSENGER" },
+        })
+
+        // Transformer les données de l'API en notre format interne
+        const transformedPassengers: Passenger[] = data.users.edges.map((edge: { node: PassengerNode }) => {
+          const node = edge.node
+          const documents = node.documents.edges || []
+
+          // Trouver les documents d'identité (recto/verso)
+          const idCardFront =
+            documents.find((doc: any) => doc.node.rectoPath)?.node.rectoPath || "/placeholder.svg?height=300&width=500"
+          const idCardBack =
+            documents.find((doc: any) => doc.node.versoPath)?.node.versoPath || "/placeholder.svg?height=300&width=500"
+
+          
+
+          return {
+            id: node.id,
+            firstName: node.firstName,
+            lastName: node.lastName,
+            fullName: `${node.firstName} ${node.lastName}`,
+            email: node.email,
+            phone: "+225"+node.phoneNumber || "Non spécifié",
+            photo: "/placeholder.svg?height=40&width=40", // Placeholder pour l'image de profil
+            isActive: node.isActive,
+            isBlocked: !node.isActive,
+            registrationDate: new Date(node.createdAt).toLocaleDateString(),
+            reservations: Math.floor(Math.random() * 20), // Valeur aléatoire pour l'exemple
+            passengerVerified: node.status.passengerVerified,
+            driverVerified: node.status.driverVerified,
+            idCardFront: idCardFront,
+            idCardBack: idCardBack,
+          }
+        })
+
+        setPassengerList(transformedPassengers)
+        setError(null)
+      } catch (err) {
+        console.error("Erreur lors du chargement des passagers:", err)
+        setError("Impossible de charger les passagers. Veuillez réessayer plus tard.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchPassengers()
+  }, [])
 
   // Filter effect
   useEffect(() => {
-    let result = clientList
+    let result = passengerList
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
-        (client) => client.firstName.toLowerCase().includes(query) || client.lastName.toLowerCase().includes(query),
+        (passenger) =>
+          passenger.firstName.toLowerCase().includes(query) ||
+          passenger.lastName.toLowerCase().includes(query) ||
+          passenger.email.toLowerCase().includes(query),
       )
     }
 
-    if (residenceFilter !== "all") {
-      result = result.filter((client) => client.residence === residenceFilter)
+    if (statusFilter !== "all") {
+      if (statusFilter === "active") {
+        result = result.filter((passenger) => !passenger.isBlocked)
+      } else if (statusFilter === "blocked") {
+        result = result.filter((passenger) => passenger.isBlocked)
+      }
     }
 
-    setFilteredClients(result)
+    setFilteredPassengers(result)
     setTotalPages(Math.ceil(result.length / itemsPerPage))
     setCurrentPage(1) // Reset to first page when filters change
-  }, [clientList, searchQuery, residenceFilter, itemsPerPage])
+  }, [passengerList, searchQuery, statusFilter, itemsPerPage])
 
   // Pagination effect
   useEffect(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
-    setPaginatedClients(filteredClients.slice(startIndex, endIndex))
-  }, [currentPage, filteredClients, itemsPerPage])
+    setPaginatedPassengers(filteredPassengers.slice(startIndex, endIndex))
+  }, [currentPage, filteredPassengers, itemsPerPage])
 
   // Generate pagination items
   const renderPaginationItems = () => {
@@ -204,50 +271,65 @@ export default function ClientDashboard() {
     return items
   }
 
-  // Get unique residences for the filter
-  const uniqueResidences = Array.from(new Set(clients.map((client) => client.residence)))
-
-  const toggleClientBlock = (clientId: number) => {
-    setClientList((prevList) =>
-      prevList.map((client) => {
-        if (client.id === clientId) {
-          return { ...client, isBlocked: !client.isBlocked }
+  const togglePassengerBlock = (passengerId: string) => {
+    setPassengerList((prevList) =>
+      prevList.map((passenger) => {
+        if (passenger.id === passengerId) {
+          return { ...passenger, isBlocked: !passenger.isBlocked, isActive: !passenger.isActive }
         }
-        return client
+        return passenger
       }),
     )
   }
 
-  const showClientDetails = (client: Client) => {
-    setSelectedClient(client)
+  const showPassengerDetails = (passenger: Passenger) => {
+    setSelectedPassenger(passenger)
     setIsDialogOpen(true)
+  }
+
+  // Afficher un état de chargement
+  if (loading) {
+    return (
+      <div className="container mx-auto py-10 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#8eb464] mb-4" />
+        <p>Chargement des passagers...</p>
+      </div>
+    )
+  }
+
+  // Afficher un message d'erreur
+  if (error) {
+    return (
+      <div className="container mx-auto py-10">
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
   return (
     <div className="container mx-auto py-10">
-      <h1 className="text-2xl font-bold mb-5">Tableau de bord des clients VTC</h1>
+      <h1 className="text-2xl font-bold mb-5">Tableau de bord des passagers VTC</h1>
 
       {/* Filtres */}
       <div className="mb-6 space-y-4">
         <div className="flex flex-wrap gap-4">
-          <Select onValueChange={setResidenceFilter} defaultValue="all">
+          <Select onValueChange={setStatusFilter} defaultValue="all">
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtrer par résidence" />
+              <SelectValue placeholder="Filtrer par statut" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Toutes les résidences</SelectItem>
-              {uniqueResidences.map((residence) => (
-                <SelectItem key={residence} value={residence}>
-                  {residence}
-                </SelectItem>
-              ))}
+              <SelectItem value="all">Tous les statuts</SelectItem>
+              <SelectItem value="active">Actifs</SelectItem>
+              <SelectItem value="blocked">Bloqués</SelectItem>
             </SelectContent>
           </Select>
 
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par nom"
+              placeholder="Rechercher par nom ou email"
               className="pl-8"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -256,147 +338,180 @@ export default function ClientDashboard() {
         </div>
       </div>
 
-      {/* Tableau des clients */}
+      {/* Tableau des passagers */}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Photo</TableHead>
-              <TableHead>Nom</TableHead>
-              <TableHead>Prénom</TableHead>
-              <TableHead>Lieu de résidence</TableHead>
+              <TableHead>Nom et prenom</TableHead>
+              <TableHead>Numero de tel</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead>Nombre de réservations</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedClients.map((client) => (
-              <TableRow key={client.id}>
-                <TableCell>
-                  <Image
-                    src={client.photo || "/placeholder.svg"}
-                    alt={`${client.firstName} ${client.lastName}`}
-                    width={40}
-                    height={40}
-                    className="rounded-full"
-                  />
-                </TableCell>
-                <TableCell>{client.lastName}</TableCell>
-                <TableCell>{client.firstName}</TableCell>
-                <TableCell>{client.residence}</TableCell>
-                <TableCell>{client.reservations}</TableCell>
-                <TableCell>
-                  <Badge variant={client.isBlocked ? "destructive" : "default"}>
-                    {client.isBlocked ? "Bloqué" : "Actif"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <span className="sr-only">Ouvrir le menu</span>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => showClientDetails(client)}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Voir détails
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toggleClientBlock(client.id)}>
-                        {client.isBlocked ? (
-                          <>
-                            <Unlock className="mr-2 h-4 w-4" />
-                            Débloquer
-                          </>
-                        ) : (
-                          <>
-                            <Lock className="mr-2 h-4 w-4" />
-                            Bloquer
-                          </>
-                        )}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+            {paginatedPassengers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  Aucun passager trouvé
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              paginatedPassengers.map((passenger) => (
+                <TableRow key={passenger.id}>
+                  <TableCell>
+                    <Image
+                      src={passenger.photo || "/placeholder.svg"}
+                      alt={`${passenger.firstName} ${passenger.lastName}`}
+                      width={40}
+                      height={40}
+                      className="rounded-full"
+                    />
+                  </TableCell>
+                  <TableCell>{passenger.fullName}</TableCell>
+                  <TableCell>{passenger.phone}</TableCell>
+                  <TableCell>{passenger.email}</TableCell>
+                  <TableCell>{passenger.reservations}</TableCell>
+                  <TableCell>
+                    <Badge variant={passenger.isActive ? "default" : "destructive"}>
+                      {passenger.isActive ? "Actif" : "Bloqué"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Ouvrir le menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => showPassengerDetails(passenger)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Voir détails
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => togglePassengerBlock(passenger.id)}>
+                          {passenger.isBlocked ? (
+                            <>
+                              <Unlock className="mr-2 h-4 w-4" />
+                              Débloquer
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="mr-2 h-4 w-4" />
+                              Bloquer
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
 
       {/* Pagination */}
-      <div className="mt-4">
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
-
-            {renderPaginationItems()}
-
-            <PaginationItem>
-              <PaginationNext
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-        <div className="text-center text-sm text-muted-foreground mt-2">
-          Affichage de {Math.min((currentPage - 1) * itemsPerPage + 1, filteredClients.length)} à{" "}
-          {Math.min(currentPage * itemsPerPage, filteredClients.length)} sur {filteredClients.length} clients
-        </div>
-      </div>
-
-      {/* Dialog pour les détails du client */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        {selectedClient && (
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Détails du client</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="flex items-center gap-4">
-                <Image
-                  src={selectedClient.photo || "/placeholder.svg"}
-                  alt={`${selectedClient.firstName} ${selectedClient.lastName}`}
-                  width={80}
-                  height={80}
-                  className="rounded-full"
+      {filteredPassengers.length > 0 && (
+        <div className="mt-4">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
                 />
-                <div>
-                  <h3 className="font-semibold">{`${selectedClient.firstName} ${selectedClient.lastName}`}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedClient.email}</p>
+              </PaginationItem>
+
+              {renderPaginationItems()}
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+          <div className="text-center text-sm text-muted-foreground mt-2">
+            Affichage de {Math.min((currentPage - 1) * itemsPerPage + 1, filteredPassengers.length)} à{" "}
+            {Math.min(currentPage * itemsPerPage, filteredPassengers.length)} sur {filteredPassengers.length} passagers
+          </div>
+        </div>
+      )}
+
+      {/* Dialog pour les détails du passager */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        {selectedPassenger && (
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Détails du passager</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Informations personnelles avec carte d'identité */}
+              <div className="col-span-1 md:col-span-2">
+                <div className="flex items-center gap-4 mb-6">
+                  <Image
+                    src={selectedPassenger.photo || "/placeholder.svg"}
+                    alt={`${selectedPassenger.firstName} ${selectedPassenger.lastName}`}
+                    width={80}
+                    height={80}
+                    className="rounded-full"
+                  />
+                  <div>
+                    <h3 className="font-semibold text-lg">{`${selectedPassenger.firstName} ${selectedPassenger.lastName}`}</h3>
+                    <p className="text-sm text-muted-foreground">ID: {selectedPassenger.id}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Infos de base */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        <span>{selectedPassenger.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        <span>{selectedPassenger.phone}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>Inscrit le {selectedPassenger.registrationDate}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium mb-2">Statut du compte</p>
+                      <Badge variant={selectedPassenger.isBlocked ? "destructive" : "default"}>
+                        {selectedPassenger.isBlocked ? "Bloqué" : "Actif"}
+                      </Badge>
+                    </div>
+                    
+                  </div>
+
+                  {/* Carte d'identité */}
+                  
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium">Téléphone</p>
-                  <p className="text-sm">{selectedClient.phone}</p>
+
+              {/* Statistiques */}
+              <div className="col-span-1 md:col-span-2">
+                <h3 className="font-semibold text-lg mb-4">Statistiques</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Nombre de réservations</p>
+                    <p className="text-2xl font-bold">{selectedPassenger.reservations}</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Date d'inscription</p>
+                    <p className="text-lg font-medium">{selectedPassenger.registrationDate}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium">Résidence</p>
-                  <p className="text-sm">{selectedClient.residence}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Date d'inscription</p>
-                  <p className="text-sm">{selectedClient.registrationDate}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Nombre de réservations</p>
-                  <p className="text-sm">{selectedClient.reservations}</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Statut</p>
-                <Badge variant={selectedClient.isBlocked ? "destructive" : "default"} className="mt-1">
-                  {selectedClient.isBlocked ? "Bloqué" : "Actif"}
-                </Badge>
               </div>
             </div>
           </DialogContent>

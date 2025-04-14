@@ -1,5 +1,5 @@
+import UserList from "@/components/users/list/UserList";
 
-import { UserList } from "@/components/users/list/UserList"
 
 export default function UsersPage() {
   return (

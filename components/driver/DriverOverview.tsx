@@ -19,7 +19,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "./pagination"
+} from "@/components/ui/pagination"
 import {
   Eye,
   MoreHorizontal,
@@ -32,15 +32,76 @@ import {
   Calendar,
   CreditCard,
   Search,
+  Loader2,
 } from "lucide-react"
 import Image from "next/image"
+import { client } from "@/lib/appoloClient"
+import { GET_DRIVERS } from "@/lib/graphql/queries"
+import { UPDATE_VERIFICATION_USER_MUTATION } from "@/lib/graphql/mutation/user-mutation"
+import { gql } from "@apollo/client"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
+// Type pour les données du chauffeur provenant de l'API
+type DriverNode = {
+  id: string
+  firstName: string
+  lastName: string
+  phoneNumber: string
+  email: string
+  isActive: boolean
+  isOnline: boolean
+  createdAt: string
+  driverJourneys: {
+    edges: {
+      node: {
+        id: string
+      }
+    }[]
+  }
+  vehicles: {
+    edges: {
+      node: {
+        vehicleBrand: string
+        vehicleRegistration: string
+        vehicleModel: string
+        vehicleColor: string
+        documents: {
+          edges: {
+            node: {
+              rectoPath: string
+              versoPath: string
+            }
+          }[]
+        }
+      }
+    }[]
+  }
+  status: {
+    id: string
+    userType: string
+    driverVerified: string
+    passengerVerified: string
+  }
+  documents: {
+    edges: {
+      node: {
+        rectoPath: string
+        versoPath: string
+      }
+    }[]
+  }
+}
+
+
+// Type pour notre modèle de chauffeur interne
 type Driver = {
-  id: number
+  id: string
   image: string
   name: string
+  isOnline: boolean
+  isActive: boolean
   vehicleModel: string
-  vehicleMatricule: string
+  vehicleRegistration: string
   seats: number
   status: "online" | "offline"
   state: "active" | "inactive" | "pending"
@@ -53,85 +114,27 @@ type Driver = {
   rating: number
   idCardFront: string
   idCardBack: string
-  vehicleRegistration: string // Nouvelle propriété pour la carte grise
-  vehiclePhoto: string // Nouvelle propriété pour la photo du véhicule
+  vehicleRegistration_doc: string
+  driverJourneys: []
+  vehiclePhoto: string
+  firstName: string
+  lastName: string
+  driverVerified: string
+  passengerVerified: string
 }
 
-const drivers: Driver[] = [
-  {
-    id: 1,
-    image: "/images/photo1.jpeg",
-    name: "Jean Dupont",
-    vehicleModel: "Renault Clio",
-    vehicleMatricule: "AA-065-AA",
-    seats: 4,
-    status: "online",
-    state: "active",
-    orders: 150,
-    email: "jean.dupont@example.com",
-    phone: "06 12 34 56 78",
-    address: "123 rue de Paris, 75001 Paris",
-    joinDate: "15/01/2023",
-    totalEarnings: 12500,
-    rating: 4.8,
-    idCardFront: "/placeholder.svg?height=300&width=500",
-    idCardBack: "/placeholder.svg?height=300&width=500",
-    vehicleRegistration: "/placeholder.svg?height=300&width=500&text=Carte+Grise",
-    vehiclePhoto: "/placeholder.svg?height=300&width=500&text=Photo+Véhicule",
-  },
-  {
-    id: 2,
-    image: "/images/photo3.jpg",
-    name: "Marie Martin",
-    vehicleModel: "Peugeot 308",
-    vehicleMatricule: "AA-245-AA",
-    seats: 5,
-    status: "offline",
-    state: "inactive",
-    orders: 98,
-    email: "marie.martin@example.com",
-    phone: "06 98 76 54 32",
-    address: "456 avenue des Champs-Élysées, 75008 Paris",
-    joinDate: "03/03/2023",
-    totalEarnings: 8900,
-    rating: 4.6,
-    idCardFront: "/placeholder.svg?height=300&width=500",
-    idCardBack: "/placeholder.svg?height=300&width=500",
-    vehicleRegistration: "/placeholder.svg?height=300&width=500&text=Carte+Grise",
-    vehiclePhoto: "/placeholder.svg?height=300&width=500&text=Photo+Véhicule",
-  },
-  {
-    id: 3,
-    image: "/images/photo2.jpg",
-    name: "Pierre Durand",
-    vehicleModel: "Citroën C4",
-    vehicleMatricule: "AA-985-AA",
-    seats: 5,
-    status: "online",
-    state: "pending",
-    orders: 210,
-    email: "pierre.durand@example.com",
-    phone: "06 45 67 89 01",
-    address: "789 boulevard Haussmann, 75009 Paris",
-    joinDate: "22/06/2023",
-    totalEarnings: 15800,
-    rating: 4.9,
-    idCardFront: "/placeholder.svg?height=300&width=500",
-    idCardBack: "/placeholder.svg?height=300&width=500",
-    vehicleRegistration: "/placeholder.svg?height=300&width=500&text=Carte+Grise",
-    vehiclePhoto: "/placeholder.svg?height=300&width=500&text=Photo+Véhicule",
-  },
-]
-
 export default function DriverDashboard() {
-  const [driverList, setDriverList] = useState<Driver[]>(drivers)
-  const [filteredDrivers, setFilteredDrivers] = useState<Driver[]>(drivers)
+  const [driverList, setDriverList] = useState<Driver[]>([])
+  const [filteredDrivers, setFilteredDrivers] = useState<Driver[]>([])
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [stateFilter, setStateFilter] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [ordersRange, setOrdersRange] = useState<[number, number]>([0, 250])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [mutationLoading, setMutationLoading] = useState(false)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -139,7 +142,130 @@ export default function DriverDashboard() {
   const [totalPages, setTotalPages] = useState(1)
   const [paginatedDrivers, setPaginatedDrivers] = useState<Driver[]>([])
 
-  const toggleDriverState = (driverId: number) => {
+  // Charger les chauffeurs depuis l'API GraphQL
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      try {
+        setLoading(true)
+        const { data } = await client.query({
+          query: GET_DRIVERS,
+          variables: { userType: "DRIVER" },
+        })
+
+        // Transformer les données de l'API en notre format interne
+        const transformedDrivers: Driver[] = data.users.edges.map((edge: { node: DriverNode }) => {
+          const node = edge.node
+          const vehicle = node.vehicles.edges[0]?.node || {}
+          const documents = node.documents.edges || []
+
+          // Trouver les documents d'identité (recto/verso)
+          const idCardFront =
+            documents.find((doc: any) => doc.node.rectoPath)?.node.rectoPath || "/placeholder.svg?height=300&width=500"
+          const idCardBack =
+            documents.find((doc: any) => doc.node.versoPath)?.node.versoPath || "/placeholder.svg?height=300&width=500"
+
+          // Déterminer l'état du chauffeur en fonction de driverVerified
+          let state: "active" | "inactive" | "pending" = "pending"
+          if (node.status.driverVerified === "VERIFIED") {
+            state = "active"
+          } else if (node.status.driverVerified === "REJECTED") {
+            state = "inactive"
+          }
+
+          return {
+            id: node.id,
+            image: "/placeholder.svg?height=40&width=40", // Placeholder pour l'image de profil
+            name: `${node.firstName} ${node.lastName}`,
+            firstName: node.firstName,
+            lastName: node.lastName,
+            vehicleModel: vehicle.vehicleModel || "Non spécifié",
+            vehicleRegistration: vehicle.vehicleRegistration || "Non spécifié",
+            seats: 4, // Valeur par défaut
+            isOnline: node.isOnline,
+            isActive: node.isActive,
+            state: state,
+            orders: node.driverJourneys.edges.length, // Valeur aléatoire pour l'exemple
+            email: node.email,
+            phone: node.phoneNumber || "Non spécifié",
+            address: "Non spécifié", // Non fourni par l'API
+            joinDate: new Date(node.createdAt).toLocaleDateString(),
+            totalEarnings: Math.floor(Math.random() * 15000), // Valeur aléatoire pour l'exemple
+            rating: (Math.random() * 2 + 3).toFixed(1), // Note aléatoire entre 3 et 5
+            idCardFront: idCardFront,
+            idCardBack: idCardBack,
+            vehicleRegistration_doc: "/placeholder.svg?height=300&width=500&text=Carte+Grise",
+            vehiclePhoto: "/placeholder.svg?height=300&width=500&text=Photo+Véhicule",
+            driverVerified: node.status.driverVerified,
+            passengerVerified: node.status.passengerVerified,
+          }
+        })
+
+        setDriverList(transformedDrivers)
+        setError(null)
+      } catch (err) {
+        console.error("Erreur lors du chargement des chauffeurs:", err)
+        setError("Impossible de charger les chauffeurs. Veuillez réessayer plus tard.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchDrivers()
+  }, [])
+
+  const toggleDriverVerification = async (driverId: string, currentStatus: string) => {
+    try {
+      setMutationLoading(true)
+
+      // Déterminer le nouveau statut en fonction du statut actuel
+      const newStatus = currentStatus === "REJECTED" || currentStatus === "PENDING" ? "VERIFIED" : "REJECTED"
+
+      const { data } = await client.mutate({
+        mutation: UPDATE_VERIFICATION_USER_MUTATION,
+        variables: {
+          userId: driverId,
+          driverVerified: newStatus,
+        },
+      })
+
+      if (data.updateUserVerification.success) {
+        // Mettre à jour la liste des chauffeurs avec le nouveau statut
+        setDriverList((prevList) =>
+          prevList.map((driver) => {
+            if (driver.id === driverId) {
+              return {
+                ...driver,
+                driverVerified: newStatus,
+                // Mettre à jour l'état du chauffeur en fonction du nouveau statut
+                state: newStatus === "VERIFIED" ? "active" : "inactive",
+                isActive: newStatus === "VERIFIED",
+              }
+            }
+            return driver
+          }),
+        )
+
+        // Si le chauffeur sélectionné est celui qui a été modifié, mettre à jour ses informations
+        if (selectedDriver && selectedDriver.id === driverId) {
+          setSelectedDriver({
+            ...selectedDriver,
+            driverVerified: newStatus,
+            state: newStatus === "VERIFIED" ? "active" : "inactive",
+            isActive: newStatus === "VERIFIED",
+          })
+        }
+      } else {
+        setError("Échec de la mise à jour du statut: " + data.updateUserVerification.message)
+      }
+    } catch (err) {
+      console.error("Erreur lors de la mise à jour du statut:", err)
+      setError("Impossible de mettre à jour le statut. Veuillez réessayer plus tard.")
+    } finally {
+      setMutationLoading(false)
+    }
+  }
+
+  const toggleDriverState = (driverId: string) => {
     setDriverList((prevList) =>
       prevList.map((driver) => {
         if (driver.id === driverId) {
@@ -151,7 +277,7 @@ export default function DriverDashboard() {
     )
   }
 
-  const deleteDriver = (driverId: number) => {
+  const deleteDriver = (driverId: string) => {
     setDriverList((prevList) => prevList.filter((driver) => driver.id !== driverId))
   }
 
@@ -175,7 +301,10 @@ export default function DriverDashboard() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
-        (driver) => driver.name.toLowerCase().includes(query) || driver.vehicleMatricule.toLowerCase().includes(query),
+        (driver) =>
+          driver.name.toLowerCase().includes(query) ||
+          driver.vehicleRegistration.toLowerCase().includes(query) ||
+          driver.email.toLowerCase().includes(query),
       )
     }
 
@@ -260,6 +389,27 @@ export default function DriverDashboard() {
     return items
   }
 
+  // Afficher un état de chargement
+  if (loading) {
+    return (
+      <div className="container mx-auto py-10 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#8eb464] mb-4" />
+        <p>Chargement des chauffeurs...</p>
+      </div>
+    )
+  }
+
+  // Afficher un message d'erreur
+  if (error) {
+    return (
+      <div className="container mx-auto py-10">
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
+
   return (
     <div className="container mx-auto py-10">
       <h1 className="text-2xl font-bold mb-5">Tableau de bord des chauffeurs VTC</h1>
@@ -325,114 +475,128 @@ export default function DriverDashboard() {
               <TableHead>Nom et Prénom</TableHead>
               <TableHead>Modèle de véhicule</TableHead>
               <TableHead>Matricule de véhicule</TableHead>
-              <TableHead>Sièges</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>État</TableHead>
+              <TableHead>Verification</TableHead>
               <TableHead>Courses</TableHead>
               <TableHead>Options</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedDrivers.map((driver) => (
-              <TableRow key={driver.id}>
-                <TableCell>
-                  <Image
-                    src={driver.image || "/placeholder.svg"}
-                    alt={`${driver.name} profile`}
-                    width={40}
-                    height={40}
-                    className="rounded-full"
-                  />
-                </TableCell>
-                <TableCell>{driver.name}</TableCell>
-                <TableCell>{driver.vehicleModel}</TableCell>
-                <TableCell>{driver.vehicleMatricule}</TableCell>
-                <TableCell>{driver.seats}</TableCell>
-                <TableCell>
-                  <Badge
-                    className={
-                      driver.status === "online"
-                        ? "bg-green-500 hover:bg-green-600 text-white font-bold"
-                        : "bg-gray-400 hover:bg-gray-500 text-white font-bold"
-                    }
-                  >
-                    {driver.status === "online" ? "En ligne" : "Hors ligne"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    className={
-                      driver.state === "active"
-                        ? "bg-gray-100 text-gray-800"
-                        : driver.state === "inactive"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-yellow-100 text-yellow-800"
-                    }
-                  >
-                    {driver.state === "active"
-                      ? "Activé"
-                      : driver.state === "inactive"
-                        ? "Désactivé"
-                        : "En cours de validation"}
-                  </Badge>
-                </TableCell>
-                <TableCell>{driver.orders}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <span className="sr-only">Ouvrir le menu</span>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => showDriverDetails(driver)}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Voir détails
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => deleteDriver(driver.id)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Supprimer
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toggleDriverState(driver.id)}>
-                        <Power className="mr-2 h-4 w-4" />
-                        {driver.state === "active" ? "Désactiver" : "Activer"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+            {paginatedDrivers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8">
+                  Aucun chauffeur trouvé
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              paginatedDrivers.map((driver) => (
+                <TableRow key={driver.id}>
+                  <TableCell>
+                    <Image
+                      src={driver.image || "/placeholder.svg"}
+                      alt={`${driver.name} profile`}
+                      width={40}
+                      height={40}
+                      className="rounded-full"
+                    />
+                  </TableCell>
+                  <TableCell>{driver.name}</TableCell>
+                  <TableCell>{driver.vehicleModel}</TableCell>
+                  <TableCell>{driver.vehicleRegistration}</TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        driver.isOnline
+                          ? "bg-green-500 hover:bg-green-600 text-white font-bold"
+                          : "bg-gray-400 hover:bg-gray-500 text-white font-bold"
+                      }
+                    >
+                      {driver.isOnline ? "En ligne" : "Hors ligne"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={driver.isActive ? "bg-green-100 text-gray-800" : "bg-yellow-100 text-yellow-800"}>
+                      {driver.isActive ? "Activé" : "En cours de validation"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        driver.driverVerified === "VERIFIED"
+                          ? "bg-green-100 text-green-800"
+                          : driver.driverVerified === "REJECTED"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-yellow-100 text-yellow-800"
+                      }
+                    >
+                      {driver.driverVerified === "VERIFIED"
+                        ? "Vérifié"
+                        : driver.driverVerified === "REJECTED"
+                          ? "Rejeté"
+                          : "En attente"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{driver.orders}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Ouvrir le menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => showDriverDetails(driver)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Voir détails
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => deleteDriver(driver.id)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Supprimer
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleDriverVerification(driver.id, driver.driverVerified)}>
+                          <Power className="mr-2 h-4 w-4" />
+                          {driver.driverVerified === "VERIFIED" ? "Désactiver" : "Activer"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
 
       {/* Pagination */}
-      <div className="mt-4">
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
+      {filteredDrivers.length > 0 && (
+        <div className="mt-4">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
 
-            {renderPaginationItems()}
+              {renderPaginationItems()}
 
-            <PaginationItem>
-              <PaginationNext
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-        <div className="text-center text-sm text-muted-foreground mt-2">
-          Affichage de {Math.min((currentPage - 1) * itemsPerPage + 1, filteredDrivers.length)} à{" "}
-          {Math.min(currentPage * itemsPerPage, filteredDrivers.length)} sur {filteredDrivers.length} chauffeurs
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+          <div className="text-center text-sm text-muted-foreground mt-2">
+            Affichage de {Math.min((currentPage - 1) * itemsPerPage + 1, filteredDrivers.length)} à{" "}
+            {Math.min(currentPage * itemsPerPage, filteredDrivers.length)} sur {filteredDrivers.length} chauffeurs
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Dialog pour les détails du chauffeur */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -534,11 +698,7 @@ export default function DriverDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">Matricule:</span>
-                      <span>{selectedDriver.vehicleMatricule}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">Nombre de sièges:</span>
-                      <span>{selectedDriver.seats}</span>
+                      <span>{selectedDriver.vehicleRegistration}</span>
                     </div>
                   </div>
                   <Tabs defaultValue="photo" className="w-full">
@@ -559,7 +719,7 @@ export default function DriverDashboard() {
                     <TabsContent value="registration">
                       <div className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border">
                         <Image
-                          src={selectedDriver.vehicleRegistration || "/placeholder.svg"}
+                          src={selectedDriver.vehicleRegistration_doc || "/placeholder.svg"}
                           alt="Carte grise"
                           fill
                           className="object-cover"
@@ -604,31 +764,65 @@ export default function DriverDashboard() {
                       <p className="text-sm text-muted-foreground mb-2">Disponibilité</p>
                       <Badge
                         className={
-                          selectedDriver.status === "online"
+                          selectedDriver.isOnline
                             ? "bg-green-500 hover:bg-green-600 text-white font-bold"
                             : "bg-gray-400 hover:bg-gray-500 text-white font-bold"
                         }
                       >
-                        {selectedDriver.status === "online" ? "En ligne" : "Hors ligne"}
+                        {selectedDriver.isOnline ? "En ligne" : "Hors ligne"}
                       </Badge>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground mb-2">État du compte</p>
                       <Badge
                         className={
-                          selectedDriver.state === "active"
-                            ? "bg-gray-100 text-gray-800"
-                            : selectedDriver.state === "inactive"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-yellow-100 text-yellow-800"
+                          selectedDriver.isActive ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
                         }
                       >
-                        {selectedDriver.state === "active"
-                          ? "Activé"
-                          : selectedDriver.state === "inactive"
-                            ? "Désactivé"
-                            : "En cours de validation"}
+                        {selectedDriver.isActive ? "Activé" : "En cours de validation"}
                       </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Statut de vérification</p>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span>Chauffeur:</span>
+                          <Badge
+                            className={
+                              selectedDriver.driverVerified === "VERIFIED"
+                                ? "bg-green-100 text-green-800"
+                                : selectedDriver.driverVerified === "REJECTED"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                            }
+                          >
+                            {selectedDriver.driverVerified === "VERIFIED"
+                              ? "Vérifié"
+                              : selectedDriver.driverVerified === "REJECTED"
+                                ? "Rejeté"
+                                : "En attente"}
+                          </Badge>
+                        </div>
+                        <Button
+                          onClick={() => toggleDriverVerification(selectedDriver.id, selectedDriver.driverVerified)}
+                          variant="outline"
+                          size="sm"
+                          className="w-full mt-2"
+                          disabled={mutationLoading}
+                        >
+                          {mutationLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Mise à jour...
+                            </>
+                          ) : (
+                            <>
+                              <Power className="mr-2 h-4 w-4" />
+                              {selectedDriver.driverVerified === "VERIFIED" ? "Désactiver" : "Activer"}
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -640,4 +834,3 @@ export default function DriverDashboard() {
     </div>
   )
 }
-
