@@ -662,7 +662,7 @@ export default function DriverDashboard() {
                         <TabsContent value="front">
                           <div className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border">
                             <Image
-                              src={selectedDriver.idCardFront || "/placeholder.svg"}
+                              src={selectedDriver.idCardFront}
                               alt="Carte d'identité recto"
                               fill
                               className="object-cover"

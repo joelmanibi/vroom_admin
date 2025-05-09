@@ -38,6 +38,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Type pour les données du passager provenant de l'API
 type PassengerNode = {
+  passengerBookings: any
+  driverJourneys: any
   id: string
   firstName: string
   lastName: string
@@ -149,7 +151,7 @@ export default function PassengerDashboard() {
             isActive: node.isActive,
             isBlocked: !node.isActive,
             registrationDate: new Date(node.createdAt).toLocaleDateString(),
-            reservations: Math.floor(Math.random() * 20), // Valeur aléatoire pour l'exemple
+            reservations: node.passengerBookings.edges.length, 
             passengerVerified: node.status.passengerVerified,
             driverVerified: node.status.driverVerified,
             idCardFront: idCardFront,
