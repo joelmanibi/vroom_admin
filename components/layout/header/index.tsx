@@ -13,8 +13,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ModeToggle } from "@/components/mode-toggle"
+import { logout, getUserData } from "@/lib/auth"
 
 export function Header() {
+  const userData = getUserData()
+  
   return (
     <header className="border-b bg-[#1f3932]">
       <div className="flex h-16 items-center px-4 gap-4">
@@ -38,9 +41,9 @@ export function Header() {
           <DropdownMenuContent className="w-56" align="end" forceMount>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">John Doe</p>
+                <p className="text-sm font-medium leading-none">{userData?.user?.firstName || 'Utilisateur'} {userData?.user?.lastName || ''}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  john.doe@example.com
+                  {userData?.user?.email || 'utilisateur@exemple.com'}
                 </p>
               </div>
             </DropdownMenuLabel>
@@ -48,7 +51,7 @@ export function Header() {
             <DropdownMenuItem>Profil</DropdownMenuItem>
             <DropdownMenuItem>Paramètres</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Déconnexion</DropdownMenuItem>
+            <DropdownMenuItem onClick={logout}>Déconnexion</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
